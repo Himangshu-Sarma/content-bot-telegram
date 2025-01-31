@@ -49,7 +49,7 @@ class Analytics:
         if user_id not in self.data or len(self.data[user_id]) < 2:
             return 0.0
 
-        # Get views growth rate
+        # Get views growth rate 
         first_views = self.data[user_id][0]["views"]
         last_views = self.data[user_id][-1]["views"]
         return (
@@ -267,54 +267,61 @@ Ready to transform your content creation journey?
             # Schedule next reminder for tomorrow at the same time
             if participant["current_day"] < 21:
                 next_time = datetime.now() + timedelta(days=1)
-
-                job_name = f"reminder_{user_id}_{participant['current_day'] + 1}"
-                context.job_queue.run_once(
-                    lambda ctx: asyncio.create_task(
-                        self.send_daily_reminder(user_id, ctx)
-                    ),
-                    when=next_time,
-                    name=job_name,
-                )
+                try:
+                    job_name = f"reminder_{user_id}_{participant['current_day'] + 1}"
+                    context.job_queue.run_once(
+                        lambda ctx: asyncio.create_task(
+                            self.send_daily_reminder(user_id, ctx)
+                        ),
+                        when=next_time,
+                        name=job_name,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to schedule next reminder: {e}")
 
     async def handle_viral_content(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Process the viral content information."""
         user_id = update.effective_user.id
+        try:
+            content_link, views = map(str.strip, update.message.text.split(","))
+            views = int(views)
 
-        content_link, views = map(str.strip, update.message.text.split(","))
-        views = int(views)
+            users[user_id]["viral_content"] = {"link": content_link, "views": views}
 
-        users[user_id]["viral_content"] = {"link": content_link, "views": views}
-
-        # Analyze creator potential
-        recommendation = ""
-        if views >= 10000:
-            recommendation = "Your content shows high viral potential! Consider starting the challenge."
-        elif views >= 1000:
-            recommendation = (
-                "Good start! The challenge can help you reach bigger audiences."
-            )
-        else:
-            recommendation = (
-                "Let's work on growing your audience through the challenge!"
-            )
-
-        keyboard = [
-            [
-                InlineKeyboardButton(
-                    "Start 21-Day Challenge 🎯", callback_data="challenge_info"
+            # Analyze creator potential
+            recommendation = ""
+            if views >= 10000:
+                recommendation = "Your content shows high viral potential! Consider starting the challenge."
+            elif views >= 1000:
+                recommendation = (
+                    "Good start! The challenge can help you reach bigger audiences."
                 )
+            else:
+                recommendation = (
+                    "Let's work on growing your audience through the challenge!"
+                )
+
+            keyboard = [
+                [
+                    InlineKeyboardButton(
+                        "Start 21-Day Challenge 🎯", callback_data="challenge_info"
+                    )
+                ]
             ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+            reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await update.message.reply_text(
-            f"Thanks for sharing! {recommendation}", reply_markup=reply_markup
-        )
+            await update.message.reply_text(
+                f"Thanks for sharing! {recommendation}", reply_markup=reply_markup
+            )
 
-        users[user_id]["state"] = "ready_for_challenge"
+            users[user_id]["state"] = "ready_for_challenge"
+
+        except ValueError:
+            await update.message.reply_text(
+                "Please use the format: link, views\nExample: https://example.com/content, 1000"
+            )
 
     async def handle_challenge_update(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -326,60 +333,64 @@ Ready to transform your content creation journey?
             await update.message.reply_text("Please start the challenge first!")
             return
 
-        content_link, views = map(str.strip, update.message.text.split(","))
-        views = int(views)
+        try:
+            content_link, views = map(str.strip, update.message.text.split(","))
+            views = int(views)
 
-        participant = self.challenge_participants[user_id]
-        current_day = participant["current_day"]
+            participant = self.challenge_participants[user_id]
+            current_day = participant["current_day"]
 
-        # Store the daily update
-        participant["posts"].append(
-            {
-                "day": current_day,
-                "link": content_link,
-                "views": views,
-                "timestamp": datetime.now(),
-            }
-        )
+            # Store the daily update
+            participant["posts"].append(
+                {
+                    "day": current_day,
+                    "link": content_link,
+                    "views": views,
+                    "timestamp": datetime.now(),
+                }
+            )
 
-        # Update analytics
-        self.analytics.add_data_point(user_id, current_day, views)
+            # Update analytics
+            self.analytics.add_data_point(user_id, current_day, views)
 
-        # Generate progress report
-        growth_rate = self.analytics.get_growth_rate(user_id)
+            # Generate progress report
+            growth_rate = self.analytics.get_growth_rate(user_id)
 
-        # Send progress update
-        progress_text = (
-            f"✅ Day {current_day} Update Recorded!\n\n"
-            f"📈 Growth Rate: {growth_rate:.1f}%\n"
-            f"📊 Total Posts: {len(participant['posts'])}\n"
-            f"🎯 Days Remaining: {21 - current_day}"
-        )
+            # Send progress update
+            progress_text = (
+                f"✅ Day {current_day} Update Recorded!\n\n"
+                f"📈 Growth Rate: {growth_rate:.1f}%\n"
+                f"📊 Total Posts: {len(participant['posts'])}\n"
+                f"🎯 Days Remaining: {21 - current_day}"
+            )
 
-        # Send growth chart every 7 days
-        if current_day % 7 == 0:
-            chart = self.analytics.generate_growth_chart(user_id)
-            if chart:
-                await context.bot.send_photo(
-                    chat_id=user_id,
-                    photo=chart,
-                    caption="Your 7-day growth chart 📈",
-                )
+            # Send growth chart every 7 days
+            if current_day % 7 == 0:
+                chart = self.analytics.generate_growth_chart(user_id)
+                if chart:
+                    await context.bot.send_photo(
+                        chat_id=user_id,
+                        photo=chart,
+                        caption="Your 7-day growth chart 📈",
+                    )
 
-        # Check for challenge completion
-        if current_day >= 21:
-            await self.handle_challenge_completion(update, context)
+            # Check for challenge completion
+            if current_day >= 21:
+                await self.handle_challenge_completion(update, context)
 
-        # Check progress for test = 2 days
-        # if current_day >= 2:
-        #     await self.handle_challenge_completion(update, context)
+            # Check progress for test = 2 days
+            # if current_day >= 2:
+            #     await self.handle_challenge_completion(update, context)
 
-        else:
-            participant["current_day"] += 1
-            await update.message.reply_text(progress_text)
+            else:
+                participant["current_day"] += 1
+                await update.message.reply_text(progress_text)
 
+        except ValueError:
+            await update.message.reply_text(
+                "Please use the format: link, views\nExample: https://example.com/content, 1000"
+            )
 
-    # handler function for after completion of challenge
     async def handle_challenge_completion(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
@@ -426,23 +437,23 @@ Ready to transform your content creation journey?
         # Clean up challenge data but keep analytics
         del self.challenge_participants[user_id]
 
-    # async def get_analytics_summary(self, user_id: int) -> str:
-    #     """Generate an analytics summary for a user."""
-    #     if user_id not in self.analytics.data:
-    #         return "No analytics data available yet."
+    async def get_analytics_summary(self, user_id: int) -> str:
+        """Generate an analytics summary for a user."""
+        if user_id not in self.analytics.data:
+            return "No analytics data available yet."
 
-    #     data = self.analytics.data[user_id]
-    #     total_views = sum(point["views"] for point in data)
-    #     avg_views = total_views / len(data)
-    #     growth_rate = self.analytics.get_growth_rate(user_id)
+        data = self.analytics.data[user_id]
+        total_views = sum(point["views"] for point in data)
+        avg_views = total_views / len(data)
+        growth_rate = self.analytics.get_growth_rate(user_id)
 
-    #     return (
-    #         "📊 Analytics Summary:\n\n"
-    #         f"- Total Views: {total_views:,}\n"
-    #         f"- Average Views: {avg_views:,.1f}\n"
-    #         f"- Growth Rate: {growth_rate:.1f}%\n"
-    #         f"- Days Tracked: {len(data)}"
-    #     )
+        return (
+            "📊 Analytics Summary:\n\n"
+            f"- Total Views: {total_views:,}\n"
+            f"- Average Views: {avg_views:,.1f}\n"
+            f"- Growth Rate: {growth_rate:.1f}%\n"
+            f"- Days Tracked: {len(data)}"
+        )
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle incoming messages based on user state."""
