@@ -49,7 +49,7 @@ class Analytics:
         if user_id not in self.data or len(self.data[user_id]) < 2:
             return 0.0
 
-        # Get views growth rate 
+        # Get views growth rate
         first_views = self.data[user_id][0]["views"]
         last_views = self.data[user_id][-1]["views"]
         return (
@@ -411,17 +411,15 @@ Ready to transform your content creation journey?
             f"- Growth Rate: {growth_rate:.1f}%\n\n"
         )
 
-        # Generate recommendations based on performance
-        if growth_rate > 100:
-            completion_text += (
-                "🌟 Outstanding growth! You're ready for brand partnerships!"
-            )
-        elif growth_rate > 50:
-            completion_text += "💪 Great progress! Consider starting another challenge!"
+        # Generate recommendations based on total views
+        showReChallenge = False
+        if total_views > 100000:
+            completion_text += "🌟 Outstanding growth! You're ready for brand partnerships! Want to explore creatorship ?"
+        # elif growth_rate > 50:
+        #     completion_text += "💪 Great progress! Consider starting another challenge!"
         else:
-            completion_text += (
-                "📈 Good effort! Let's analyze and improve your strategy!"
-            )
+            completion_text += "📈 Good effort! Let's analyze and improve your strategy! Consider to start another challenge ?"
+            showReChallenge = True
 
         # Send final growth chart
         chart = self.analytics.generate_growth_chart(user_id)
@@ -432,28 +430,41 @@ Ready to transform your content creation journey?
                 caption="Your complete challenge growth chart 📈",
             )
 
-        await update.message.reply_text(completion_text)
+        if showReChallenge == False:
+            await update.message.reply_text(completion_text)
+        else:
+            keyboard = [
+                [
+                    InlineKeyboardButton(
+                        "Start 21-Day Challenge 🎯", callback_data="challenge_info"
+                    )
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.message.reply_text(
+                completion_text, reply_markup
+            )
 
         # Clean up challenge data but keep analytics
         del self.challenge_participants[user_id]
 
-    async def get_analytics_summary(self, user_id: int) -> str:
-        """Generate an analytics summary for a user."""
-        if user_id not in self.analytics.data:
-            return "No analytics data available yet."
+    # async def get_analytics_summary(self, user_id: int) -> str:
+    #     """Generate an analytics summary for a user."""
+    #     if user_id not in self.analytics.data:
+    #         return "No analytics data available yet."
 
-        data = self.analytics.data[user_id]
-        total_views = sum(point["views"] for point in data)
-        avg_views = total_views / len(data)
-        growth_rate = self.analytics.get_growth_rate(user_id)
+    #     data = self.analytics.data[user_id]
+    #     total_views = sum(point["views"] for point in data)
+    #     avg_views = total_views / len(data)
+    #     growth_rate = self.analytics.get_growth_rate(user_id)
 
-        return (
-            "📊 Analytics Summary:\n\n"
-            f"- Total Views: {total_views:,}\n"
-            f"- Average Views: {avg_views:,.1f}\n"
-            f"- Growth Rate: {growth_rate:.1f}%\n"
-            f"- Days Tracked: {len(data)}"
-        )
+    #     return (
+    #         "📊 Analytics Summary:\n\n"
+    #         f"- Total Views: {total_views:,}\n"
+    #         f"- Average Views: {avg_views:,.1f}\n"
+    #         f"- Growth Rate: {growth_rate:.1f}%\n"
+    #         f"- Days Tracked: {len(data)}"
+    #     )
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle incoming messages based on user state."""
